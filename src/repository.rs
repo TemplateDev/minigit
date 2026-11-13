@@ -1,6 +1,8 @@
 
 use std::fs;
 use std::io;
+use std::path::Path;
+use crate::{models::commit::Commit, objects};
 
 pub fn init() -> io::Result<()> {
     let current_dir = std::env::current_dir()?;
@@ -32,4 +34,34 @@ pub fn init() -> io::Result<()> {
     println!("Initialized empty MiniGit repository.");
 
     Ok(())
+}
+
+pub fn load_head(repo: &Path) -> std::io::Result<Option<Commit>> {
+    let head_path = repo.join(".minigit").join("HEAD");
+    let head_contents = std::fs::read_to_string(head_path)?;
+    
+    let reference = head_contents
+        .trim()
+        .strip_prefix("ref: ")
+        .ok_or_else(|| {
+            std::io::Error::other("Invalid HEAD reference")
+        })?;
+
+    let branch_path = repo.join(".minigit").join(reference);
+
+    // A branch without a commit doesn't have a reference file yet.
+    if !branch_path.exists() {
+        return Ok(None);
+    }
+
+    let hash = std::fs::read_to_string(branch_path)?;
+    let hash = hash.trim();
+
+    if hash.is_empty() {
+        return Ok(None);
+    }
+
+    let commit = objects::load_commit(repo, hash)?;
+
+    Ok(Some(commit))
 }

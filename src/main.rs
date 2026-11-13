@@ -4,6 +4,7 @@ mod repository;
 mod objects;
 mod index;
 mod commands;
+mod models;
 
 #[derive(Parser)]
 #[command(name = "minigit", about = "A miniature Git implementation")]
@@ -15,7 +16,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Init,
-    Add { patterns: Vec<String> }
+    Add { patterns: Vec<String> },
+    Status
 }
 
 fn main() {
@@ -24,6 +26,7 @@ fn main() {
     let result: Result<(), Box<dyn std::error::Error>> = match cli.command {
         Commands::Init => repository::init().map_err(|error| Box::new(error) as Box<dyn std::error::Error>),
         Commands::Add { patterns } => commands::add::run(&patterns),
+        Commands::Status => commands::status::run(),
     };
 
     if let Err(error) = result {
