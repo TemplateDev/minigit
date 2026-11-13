@@ -1,6 +1,3 @@
-
-use std::path::PathBuf;
-
 use clap::{Parser, Subcommand};
 
 mod repository;
@@ -18,7 +15,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Init,
-    Add { path: PathBuf }
+    Add { patterns: Vec<String> }
 }
 
 fn main() {
@@ -26,7 +23,7 @@ fn main() {
 
     let result: Result<(), Box<dyn std::error::Error>> = match cli.command {
         Commands::Init => repository::init().map_err(|error| Box::new(error) as Box<dyn std::error::Error>),
-        Commands::Add { path } => commands::add::run(&path),
+        Commands::Add { patterns } => commands::add::run(&patterns),
     };
 
     if let Err(error) = result {
