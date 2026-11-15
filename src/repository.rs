@@ -36,6 +36,9 @@ pub fn init() -> io::Result<()> {
     Ok(())
 }
 
+/// Reads `HEAD` to find the current branch, then loads and returns its commit.
+/// Returns `Ok(None)` when the branch has no commit yet; returns an error if
+/// `HEAD`, the branch reference, or the referenced commit cannot be read.
 pub fn load_head(repo: &Path) -> std::io::Result<Option<Commit>> {
     let head_path = repo.join(".minigit").join("HEAD");
     let head_contents = std::fs::read_to_string(head_path)?;
@@ -64,4 +67,36 @@ pub fn load_head(repo: &Path) -> std::io::Result<Option<Commit>> {
     let commit = objects::load_commit(repo, hash)?;
 
     Ok(Some(commit))
+}
+
+
+/// Reads `HEAD` to find the current branch, then returns the hash stored in
+/// that branch's reference file. Returns `Ok(None)` when the branch reference
+/// does not exist yet or contains no hash. Unlike [`load_head`], this function
+/// does not load or validate the referenced commit. Returns an error if `HEAD`
+/// or an existing branch reference cannot be read, or if `HEAD` is invalid.
+pub fn head_hash(repo: &Path) -> std::io::Result<Option<String>> {
+    let head_contents = std::fs::read_to_string(
+        repo.join(".minigit").join("HEAD")
+    )?;
+
+    let reference = head_contents
+        .trim()
+        .strip_prefix("ref: ")
+        .ok_or_else(|| std::io::Error::other("Invalid HEAD reference"))?;
+
+    let branch_path = repo.join(".minigit").join(reference);
+
+    if !branch_path.exists() {
+        return Ok(None);
+    }
+
+    let hash = std::fs::read_to_string(branch_path)?;
+    let hash = hash.trim().to_string();
+
+    if hash.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(hash))
+    }
 }

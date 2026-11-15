@@ -17,7 +17,11 @@ struct Cli {
 enum Commands {
     Init,
     Add { patterns: Vec<String> },
-    Status
+    Status,
+    Commit {
+        #[arg(short, long)]
+        message: String
+    }
 }
 
 fn main() {
@@ -27,6 +31,7 @@ fn main() {
         Commands::Init => repository::init().map_err(|error| Box::new(error) as Box<dyn std::error::Error>),
         Commands::Add { patterns } => commands::add::run(&patterns),
         Commands::Status => commands::status::run(),
+        Commands::Commit { message } => commands::commit::run(&message)
     };
 
     if let Err(error) = result {

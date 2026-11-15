@@ -27,6 +27,27 @@ pub fn write_blob(repo: &Path, contents: &[u8]) -> std::io::Result<String> {
     Ok(hash)
 }
 
+pub fn write_commit(
+    repo: &Path,
+    commit: &Commit,
+) -> std::io::Result<String> {
+    let contents = serde_json::to_vec(commit)
+        .map_err(std::io::Error::other)?;
+
+    let hash = to_hash(&contents)?;
+
+    let object_path = repo
+        .join(".minigit")
+        .join("objects")
+        .join(&hash);
+
+    if !object_path.exists() {
+        fs::write(object_path, contents)?;
+    }
+
+    Ok(hash)
+}
+
 // Load a commit using its hash.
 pub fn load_commit(
     repo: &Path,
