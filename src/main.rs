@@ -21,7 +21,8 @@ enum Commands {
     Commit {
         #[arg(short, long)]
         message: String
-    }
+    },
+    Log
 }
 
 fn main() {
@@ -31,7 +32,8 @@ fn main() {
         Commands::Init => repository::init().map_err(|error| Box::new(error) as Box<dyn std::error::Error>),
         Commands::Add { patterns } => commands::add::run(&patterns),
         Commands::Status => commands::status::run(),
-        Commands::Commit { message } => commands::commit::run(&message)
+        Commands::Commit { message } => commands::commit::run(&message),
+        Commands::Log => commands::log::run()
     };
 
     if let Err(error) = result {

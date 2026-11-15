@@ -15,7 +15,7 @@ pub fn run(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load the staging area
-    let mut staging_area = index::load(&repo)?;
+    let staging_area = index::load(&repo)?;
     let previous_commit = repository::load_head(&repo)?;
 
     let previous_files = previous_commit
@@ -35,7 +35,7 @@ pub fn run(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     let commit = Commit {
         message: message.to_string(),
         parent, // Point to parent or none
-        files: std::mem::take(&mut staging_area.entries),
+        files: staging_area.entries.clone(),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs(),
@@ -57,9 +57,6 @@ pub fn run(message: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     // Advance the branch pointer.
     fs::write(&branch_path, format!("{commit_hash}\n"))?;
-
-    // Clear the staging area.
-    index::save(&repo, &staging_area)?;
 
     println!("[{}] {}", &commit_hash[..7], message);
 
