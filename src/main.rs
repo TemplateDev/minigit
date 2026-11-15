@@ -13,6 +13,20 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(clap::Subcommand)]
+pub enum BranchAction {
+    Create {
+        name: String,
+    },
+    Delete {
+        name: String,
+    },
+    Rename {
+        old: String,
+        new: String,
+    },
+}
+
 #[derive(Subcommand)]
 enum Commands {
     Init,
@@ -22,7 +36,11 @@ enum Commands {
         #[arg(short, long)]
         message: String
     },
-    Log
+    Log,
+    Branch {
+        #[command(subcommand)]
+        action: Option<BranchAction>
+    }
 }
 
 fn main() {
@@ -33,7 +51,11 @@ fn main() {
         Commands::Add { patterns } => commands::add::run(&patterns),
         Commands::Status => commands::status::run(),
         Commands::Commit { message } => commands::commit::run(&message),
-        Commands::Log => commands::log::run()
+        Commands::Log => commands::log::run(),
+        Commands::Branch { action } => commands::branch::run(action).map_err(|error| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::Other, error.to_string()))
+                as Box<dyn std::error::Error>
+        }),
     };
 
     if let Err(error) = result {

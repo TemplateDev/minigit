@@ -3,6 +3,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use crate::{models::commit::Commit, objects};
+use anyhow::{Result};
 
 pub fn init() -> io::Result<()> {
     let current_dir = std::env::current_dir()?;
@@ -99,4 +100,20 @@ pub fn head_hash(repo: &Path) -> std::io::Result<Option<String>> {
     } else {
         Ok(Some(hash))
     }
+}
+
+pub fn head_ref(repo: &Path) -> Result<String> {
+    let head_path = repo.join(".minigit").join("HEAD");
+    let contents = fs::read_to_string(head_path)?;
+
+    let reference = contents
+        .trim()
+        .strip_prefix("ref: ")
+        .ok_or_else(|| anyhow::anyhow!("Invalid HEAD reference"))?;
+
+    if !reference.starts_with("refs/heads/") {
+        anyhow::bail!("HEAD does not point to a branch");
+    }
+
+    Ok(reference.to_string())
 }
