@@ -6,49 +6,47 @@ use std::{
 };
 
 use crate::{index, objects, repository};
+use crate::models::head::Head;
 
-pub fn run(branch: &str) -> Result<()> {
+pub fn run(target: &str) -> Result<()> {
     let repo = std::env::current_dir()?;
     let minigit_dir = repo.join(".minigit");
 
-    validate_branch_name(branch)?;
+    // 1. Resolve the target as either a branch or a commit hash
+    let (target_hash, target_branch) = resolve_target(&repo, target)?;
 
-    // 1. Verify the target branch exists
-    let branch_path = minigit_dir
-        .join("refs")
-        .join("heads")
-        .join(branch);
-
-    if !branch_path.is_file() {
-        bail!("Branch '{branch}' does not exist");
-    }
-
-    // 2. Refuse to switch if there is uncommitted work
-    ensure_clean_working_tree(&repo)?;
-
-    // 3. Check if already on this branch
-    let current_ref = repository::head_ref(&repo)?;
-
-    if current_ref == format!("refs/heads/{branch}") {
-        println!("Already on branch '{branch}'");
-        return Ok(());
-    }
-
-    // 4. Read and load the target commit
-    let target_hash = fs::read_to_string(&branch_path)?;
-    let target_hash = target_hash.trim();
-
-    if target_hash.is_empty() {
-        bail!("Branch '{branch}' has no commits");
-    }
-
-    let target_commit = objects::load_commit(&repo, target_hash)?;
+    // 2. Load the commit
+    let target_commit = objects::load_commit(&repo, &target_hash)?;
     let target_files = target_commit.files;
 
-    // 5. Load the index
+    // 3. Refuse to switch if there is uncommitted work
+    ensure_clean_working_tree(&repo)?;
+
+    // 4. Check whether we're already at the requested target
+    let current_head = repository::read_head(&repo)?;
+
+    match (&current_head, target_branch.as_deref()) {
+        (Head::Symbolic(reference), Some(branch))
+            if reference == &format!("refs/heads/{branch}") =>
+        {
+            println!("Already on branch '{branch}'");
+            return Ok(());
+        }
+
+        (Head::Detached(current_hash), None)
+            if current_hash == &target_hash =>
+        {
+            println!("Already at commit {}", &target_hash[..7]);
+            return Ok(());
+        }
+
+        _ => {}
+    }
+
+    // 5. Load the current index
     let current_index = index::load(&repo)?;
 
-    // 6. Restore the working directory
+    // 6. Restore the working directory to the target snapshot
     restore_working_tree(
         &repo,
         &current_index.entries,
@@ -63,12 +61,21 @@ pub fn run(branch: &str) -> Result<()> {
     index::save(&repo, &new_index)?;
 
     // 8. Update HEAD last
-    fs::write(
-        minigit_dir.join("HEAD"),
-        format!("ref: refs/heads/{branch}\n"),
-    )?;
+    let new_head = match &target_branch {
+        Some(branch) => format!("ref: refs/heads/{branch}\n"),
+        None => format!("{target_hash}\n"),
+    };
 
-    println!("Switched to branch '{branch}'");
+    fs::write(minigit_dir.join("HEAD"), new_head)?;
+
+    // 9. Report the result
+    match target_branch {
+        Some(branch) => println!("Switched to branch '{branch}'"),
+        None => println!(
+            "HEAD is now at {} (detached)",
+            &target_hash[..7]
+        ),
+    }
 
     Ok(())
 }
@@ -113,11 +120,11 @@ fn read_working_tree(repo: &Path) -> Result<BTreeMap<String, String>> {
     let mut files = BTreeMap::new();
 
     let walker = ignore::WalkBuilder::new(repo)
-        .hidden(false)
         .standard_filters(true)
+        .hidden(false)
+        .require_git(false)
         .filter_entry(|entry| {
             let name = entry.file_name();
-
             name != ".minigit" && name != ".git"
         })
         .build();
@@ -170,7 +177,10 @@ fn restore_working_tree(
         }
         
         if file_path.is_dir() {
-            fs::remove_dir_all(&file_path)?;
+            bail!(
+                "Cannot checkout: directory '{}' conflicts with a tracked file",
+                path
+            );
         }
 
         let contents = fs::read(objects_dir.join(hash))
@@ -219,4 +229,70 @@ fn safe_repo_path(repo: &Path, relative_path: &str) -> Result<PathBuf> {
     }
 
     Ok(repo.join(path))
+}
+
+fn resolve_target(
+    repo: &Path,
+    target: &str,
+) -> Result<(String, Option<String>)> {
+    // Check if target is a valid branch name
+    if validate_branch_name(target).is_ok() {
+        let branch_path = repo
+            .join(".minigit")
+            .join("refs")
+            .join("heads")
+            .join(target);
+
+        if branch_path.is_file() {
+            let hash = fs::read_to_string(&branch_path)?;
+            let hash = hash.trim().to_string();
+
+            if hash.is_empty() {
+                bail!("Branch '{target}' has no commits");
+            }
+
+            return Ok((hash, Some(target.to_string())));
+        }
+    }
+
+    // If it wasn't a branch, check whether it *looks* like a SHA-1 hash.
+    if target.len() != 40
+        || !target.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        bail!("'{target}' is not a valid branch name or commit hash");
+    }
+
+    // Verify that the commit actually exists and can be loaded.
+    objects::load_commit(repo, target)
+        .with_context(|| format!("Commit '{target}' not found"))?;
+
+    Ok((target.to_string(), None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_working_tree;
+    use std::{fs, time::SystemTime};
+
+    #[test]
+    fn read_working_tree_ignores_gitignored_files_outside_git_repositories() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let repo = std::env::temp_dir().join(format!(
+            "minigit-checkout-ignore-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&repo).unwrap();
+        fs::write(repo.join(".gitignore"), "ignored.txt\n").unwrap();
+        fs::write(repo.join("ignored.txt"), "ignored").unwrap();
+
+        let working_tree = read_working_tree(&repo);
+        fs::remove_dir_all(&repo).unwrap();
+
+        let working_tree = working_tree.unwrap();
+        assert!(working_tree.contains_key(".gitignore"));
+        assert!(!working_tree.contains_key("ignored.txt"));
+    }
 }

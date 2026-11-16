@@ -42,7 +42,7 @@ enum Commands {
         action: Option<BranchAction>
     },
     Checkout {
-        branch: String,
+        target: String,
     }
 }
 
@@ -59,7 +59,7 @@ fn main() {
             Box::new(std::io::Error::new(std::io::ErrorKind::Other, error.to_string()))
                 as Box<dyn std::error::Error>
         }),
-        Commands::Checkout { branch } => commands::checkout::run(&branch).map_err(|error| {
+        Commands::Checkout { target } => commands::checkout::run(&target).map_err(|error| {
             Box::new(std::io::Error::new(std::io::ErrorKind::Other, error.to_string()))
                 as Box<dyn std::error::Error>
         })
